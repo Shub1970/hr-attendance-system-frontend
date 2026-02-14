@@ -18,13 +18,33 @@ export type Attendance = {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
 async function fetchFromApi<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const url = `${API_BASE}${path}`;
+  const startedAt = Date.now();
 
-  if (!response.ok) {
-    throw new Error(`Request to ${path} failed with status ${response.status}`);
+  console.log(`[HR API] -> GET ${url}`);
+
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    const durationMs = Date.now() - startedAt;
+
+    if (!response.ok) {
+      console.error(`[HR API] !! ${response.status} ${url} (${durationMs}ms)`);
+      throw new Error(`Request to ${path} failed with status ${response.status}`);
+    }
+
+    console.log(`[HR API] <- ${response.status} ${url} (${durationMs}ms)`);
+    return response.json() as Promise<T>;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+
+    if (error instanceof Error) {
+      console.error(`[HR API] xx ${url} (${durationMs}ms) ${error.message}`);
+    } else {
+      console.error(`[HR API] xx ${url} (${durationMs}ms) Unknown error`);
+    }
+
+    throw error;
   }
-
-  return response.json() as Promise<T>;
 }
 
 export async function getEmployees(): Promise<Employee[]> {
