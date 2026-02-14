@@ -1,6 +1,6 @@
 import type { Attendance, Employee } from "@/lib/hr-api";
 
-export type EmployeeAvailability = "active" | "leave" | "no_info";
+export type EmployeeAvailability = "present" | "absent" | "no_info";
 
 export function todayIsoDate(): string {
   return toIsoDate(new Date());
@@ -21,7 +21,7 @@ export function buildStatusMap(
 
   attendance.forEach((record) => {
     if (record.attendance_date !== selectedDate) return;
-    statusMap.set(record.employee_id, record.status === "present" ? "active" : "leave");
+    statusMap.set(record.employee_id, record.status);
   });
 
   return statusMap;
@@ -37,7 +37,7 @@ export function countAvailability(
       acc[status] += 1;
       return acc;
     },
-    { active: 0, leave: 0, no_info: 0 } as Record<EmployeeAvailability, number>,
+    { present: 0, absent: 0, no_info: 0 } as Record<EmployeeAvailability, number>,
   );
 }
 

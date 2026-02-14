@@ -33,8 +33,8 @@ export default async function DashboardPage() {
     const counts = countAvailability(employees, statusMap);
     return {
       date,
-      active: counts.active,
-      leave: counts.leave,
+      present: counts.present,
+      absent: counts.absent,
       noInfo: counts.no_info,
     };
   });
@@ -43,13 +43,13 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-3">
         <article className="rounded-3xl border bg-[hsl(var(--card))] p-5 shadow-sm">
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">People Active / Available</p>
-          <p className="mt-3 text-4xl font-bold text-[hsl(var(--primary))]">{totals.active}</p>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">People Present</p>
+          <p className="mt-3 text-4xl font-bold text-[hsl(var(--primary))]">{totals.present}</p>
         </article>
 
         <article className="rounded-3xl border bg-[hsl(var(--card))] p-5 shadow-sm">
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">People on Leave</p>
-          <p className="mt-3 text-4xl font-bold text-[hsl(var(--secondary))]">{totals.leave}</p>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">People Absent</p>
+          <p className="mt-3 text-4xl font-bold text-[hsl(var(--secondary))]">{totals.absent}</p>
         </article>
 
         <article className="rounded-3xl border bg-[hsl(var(--card))] p-5 shadow-sm">

@@ -17,6 +17,7 @@ type EmployeeDirectoryProps = {
   subtitle: string;
   pageSize?: number;
   showFilters?: boolean;
+  enableAttendanceActions?: boolean;
 };
 
 type EmployeeRow = {
@@ -24,10 +25,12 @@ type EmployeeRow = {
   availability: EmployeeAvailability;
 };
 
-const filterTabs: Array<{ id: EmployeeAvailability; label: string }> = [
-  { id: "active", label: "Active" },
-  { id: "leave", label: "Leave" },
-  { id: "no_info", label: "No info" },
+type EmployeeFilterTab = EmployeeAvailability | "all";
+
+const filterTabs: Array<{ id: EmployeeFilterTab; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "present", label: "Present" },
+  { id: "absent", label: "Absent" },
 ];
 
 function getInitials(name: string): string {
@@ -46,13 +49,25 @@ export function EmployeeDirectory({
   subtitle,
   pageSize = 10,
   showFilters = true,
+  enableAttendanceActions = false,
 }: EmployeeDirectoryProps) {
+  const [attendanceRows, setAttendanceRows] = useState(attendance);
   const [query, setQuery] = useState("");
   const [date, setDate] = useState(todayIsoDate());
-  const [selectedTab, setSelectedTab] = useState<EmployeeAvailability>("active");
+  const [selectedTab, setSelectedTab] = useState<EmployeeFilterTab>("all");
   const [page, setPage] = useState(1);
+  const [updatingEmployeeId, setUpdatingEmployeeId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  const statusMap = useMemo(() => buildStatusMap(attendance, date), [attendance, date]);
+  const statusMap = useMemo(() => buildStatusMap(attendanceRows, date), [attendanceRows, date]);
+  const attendanceByEmployeeForDate = useMemo(() => {
+    const records = new Map<string, Attendance>();
+    attendanceRows.forEach((record) => {
+      if (record.attendance_date !== date) return;
+      records.set(record.employee_id, record);
+    });
+    return records;
+  }, [attendanceRows, date]);
 
   const allRows = useMemo<EmployeeRow[]>(() => {
     return employees.map((employee) => ({
@@ -75,6 +90,7 @@ export function EmployeeDirectory({
 
   const filteredRows = useMemo(() => {
     if (!showFilters) return searchedRows;
+    if (selectedTab === "all") return searchedRows;
     return searchedRows.filter((row) => row.availability === selectedTab);
   }, [searchedRows, selectedTab, showFilters]);
 
@@ -82,6 +98,49 @@ export function EmployeeDirectory({
   const currentPage = Math.min(page, pages);
   const pagedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const availabilityCounts = countAvailability(employees, statusMap);
+
+  async function updateAttendanceStatus(employeeId: string, status: Attendance["status"]) {
+    setUpdatingEmployeeId(employeeId);
+    setMutationError(null);
+
+    const existingRecord = attendanceByEmployeeForDate.get(employeeId);
+    const url = existingRecord ? `/api/attendance/${existingRecord.id}` : "/api/attendance";
+    const method = existingRecord ? "PUT" : "POST";
+    const payload = existingRecord ? { status } : { employee_id: employeeId, attendance_date: date, status };
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = (await response.json().catch(() => ({}))) as Partial<Attendance> & { detail?: unknown };
+      if (!response.ok) {
+        const detail = typeof data.detail === "string" ? data.detail : "Failed to update attendance.";
+        throw new Error(detail);
+      }
+
+      const savedRecord: Attendance = {
+        id: String(data.id ?? existingRecord?.id ?? `${employeeId}-${date}`),
+        employee_id: String(data.employee_id ?? employeeId),
+        attendance_date: String(data.attendance_date ?? date),
+        status: (data.status ?? status) as Attendance["status"],
+        created_at: String(data.created_at ?? existingRecord?.created_at ?? new Date().toISOString()),
+      };
+
+      setAttendanceRows((current) => {
+        if (existingRecord) {
+          return current.map((record) => (record.id === existingRecord.id ? savedRecord : record));
+        }
+        return [...current, savedRecord];
+      });
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : "Failed to update attendance.");
+    } finally {
+      setUpdatingEmployeeId(null);
+    }
+  }
 
   const goToPage = (nextPage: number) => {
     const safePage = Math.max(1, Math.min(nextPage, pages));
@@ -123,7 +182,7 @@ export function EmployeeDirectory({
         <div className="mb-5 flex flex-wrap gap-2 md:mb-6">
           {filterTabs.map((tab) => {
             const active = tab.id === selectedTab;
-            const badgeCount = availabilityCounts[tab.id];
+            const badgeCount = tab.id === "all" ? searchedRows.length : availabilityCounts[tab.id];
             return (
               <button
                 key={tab.id}
@@ -145,6 +204,8 @@ export function EmployeeDirectory({
         </div>
       ) : null}
 
+      {mutationError ? <p className="mb-4 text-sm text-[hsl(var(--destructive))]">{mutationError}</p> : null}
+
       <div className="overflow-hidden rounded-2xl border">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -153,9 +214,9 @@ export function EmployeeDirectory({
                 <th className="px-4 py-3 font-semibold">Name</th>
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Department</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-              </tr>
-            </thead>
+                 <th className="px-4 py-3 font-semibold">Status</th>
+               </tr>
+             </thead>
             <tbody>
               {pagedRows.length === 0 ? (
                 <tr>
@@ -179,23 +240,52 @@ export function EmployeeDirectory({
                     </td>
                     <td className="px-4 py-3">{formatDisplayDate(employee.created_at)}</td>
                     <td className="px-4 py-3">{employee.department}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          availability === "active"
-                            ? "bg-[hsl(var(--primary)/0.16)] text-[hsl(var(--foreground))]"
-                            : availability === "leave"
-                              ? "bg-[hsl(var(--secondary)/0.16)] text-[hsl(var(--foreground))]"
-                              : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
-                        }`}
-                      >
-                        {availability === "active"
-                          ? "Active"
-                          : availability === "leave"
-                            ? "Leave"
-                            : "No info"}
-                      </span>
-                    </td>
+                     <td className="px-4 py-3">
+                      {enableAttendanceActions ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void updateAttendanceStatus(employee.id, "present")}
+                            disabled={updatingEmployeeId === employee.id}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              availability === "present"
+                                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                                : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Present
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void updateAttendanceStatus(employee.id, "absent")}
+                            disabled={updatingEmployeeId === employee.id}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              availability === "absent"
+                                ? "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))]"
+                                : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Absent
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            availability === "present"
+                              ? "bg-[hsl(var(--primary)/0.16)] text-[hsl(var(--foreground))]"
+                              : availability === "absent"
+                                ? "bg-[hsl(var(--secondary)/0.16)] text-[hsl(var(--foreground))]"
+                                : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                          }`}
+                        >
+                          {availability === "present"
+                            ? "Present"
+                            : availability === "absent"
+                              ? "Absent"
+                              : "No info"}
+                        </span>
+                      )}
+                     </td>
                   </tr>
                 ))
               )}

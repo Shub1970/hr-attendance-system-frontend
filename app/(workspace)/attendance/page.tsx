@@ -29,6 +29,7 @@ export default async function AttendancePage() {
       subtitle="Track daily employee availability and presence"
       pageSize={10}
       showFilters
+      enableAttendanceActions
     />
   );
 }

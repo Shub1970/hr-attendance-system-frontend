@@ -15,6 +15,13 @@ type EmployeeFormState = {
   department: string;
 };
 
+const emptyEmployeeForm: EmployeeFormState = {
+  employee_id: "",
+  full_name: "",
+  email: "",
+  department: "",
+};
+
 function getInitialForm(employee: Employee): EmployeeFormState {
   return {
     employee_id: employee.employee_id,
@@ -24,8 +31,8 @@ function getInitialForm(employee: Employee): EmployeeFormState {
   };
 }
 
-function normalizeApiError(value: unknown): string {
-  if (!value || typeof value !== "object") return "Failed to update employee.";
+function normalizeApiError(value: unknown, fallbackMessage: string): string {
+  if (!value || typeof value !== "object") return fallbackMessage;
   const maybeDetail = (value as { detail?: unknown }).detail;
   if (typeof maybeDetail === "string") return maybeDetail;
   if (Array.isArray(maybeDetail)) {
@@ -37,24 +44,53 @@ function normalizeApiError(value: unknown): string {
           return typeof msg === "string" ? msg : "";
         }
         return "";
-      })
+    })
       .filter(Boolean)
       .join(", ");
     if (detailText) return detailText;
   }
-  return "Failed to update employee.";
+  return fallbackMessage;
 }
 
 export function AllEmployTable({ employees }: AllEmployTableProps) {
   const [rows, setRows] = useState(employees);
+  const [searchQuery, setSearchQuery] = useState("");
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<EmployeeFormState | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createForm, setCreateForm] = useState<EmployeeFormState>(emptyEmployeeForm);
+  const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "error" | "success"; message: string } | null>(null);
 
-  const rowCountLabel = useMemo(() => `${rows.length} employee${rows.length === 1 ? "" : "s"}`, [rows.length]);
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return rows;
+
+    return rows.filter((employee) =>
+      [
+        employee.employee_id,
+        employee.full_name,
+        employee.email,
+        employee.department,
+        employee.employment_type,
+        employee.employ_type,
+        employee.role,
+        employee.phone,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  }, [rows, searchQuery]);
+
+  const rowCountLabel = useMemo(() => {
+    if (!searchQuery.trim()) return `${rows.length} employee${rows.length === 1 ? "" : "s"}`;
+    return `${filteredRows.length} of ${rows.length} employees`;
+  }, [filteredRows.length, rows.length, searchQuery]);
 
   async function saveEdit(id: string) {
     if (!form) return;
@@ -71,7 +107,7 @@ export function AllEmployTable({ employees }: AllEmployTableProps) {
       const payload = (await response.json().catch(() => ({}))) as Partial<Employee> & { detail?: unknown };
 
       if (!response.ok) {
-        throw new Error(normalizeApiError(payload));
+        throw new Error(normalizeApiError(payload, "Failed to update employee."));
       }
 
       setRows((current) =>
@@ -99,6 +135,48 @@ export function AllEmployTable({ employees }: AllEmployTableProps) {
     }
   }
 
+  async function createEmployee() {
+    if (!createForm.employee_id || !createForm.full_name || !createForm.email || !createForm.department) {
+      setFeedback({ kind: "error", message: "Please fill employee ID, name, email, and department." });
+      return;
+    }
+
+    setIsCreating(true);
+    setFeedback(null);
+
+    try {
+      const response = await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as Partial<Employee> & { detail?: unknown };
+      if (!response.ok) {
+        throw new Error(normalizeApiError(payload, "Failed to add employee."));
+      }
+
+      const createdEmployee: Employee = {
+        id: String(payload.id ?? crypto.randomUUID()),
+        employee_id: String(payload.employee_id ?? createForm.employee_id),
+        full_name: String(payload.full_name ?? createForm.full_name),
+        email: String(payload.email ?? createForm.email),
+        department: String(payload.department ?? createForm.department),
+        created_at: String(payload.created_at ?? new Date().toISOString()),
+      };
+
+      setRows((current) => [createdEmployee, ...current]);
+      setCreateForm(emptyEmployeeForm);
+      setShowCreateForm(false);
+      setFeedback({ kind: "success", message: "Employee added successfully." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to add employee.";
+      setFeedback({ kind: "error", message });
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   async function deleteEmployee(id: string) {
     setDeletingId(id);
     setFeedback(null);
@@ -108,7 +186,7 @@ export function AllEmployTable({ employees }: AllEmployTableProps) {
       const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
 
       if (!response.ok) {
-        throw new Error(normalizeApiError(payload));
+        throw new Error(normalizeApiError(payload, "Failed to delete employee."));
       }
 
       setRows((current) => current.filter((employee) => employee.id !== id));
@@ -133,7 +211,83 @@ export function AllEmployTable({ employees }: AllEmployTableProps) {
           <h1 className="text-2xl font-bold text-[hsl(var(--card-foreground))]">All Employ</h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">Update employee profile details from one list</p>
         </div>
-        <p className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-[hsl(var(--muted-foreground))]">{rowCountLabel}</p>
+        <div className="flex items-center gap-2">
+          <p className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-[hsl(var(--muted-foreground))]">{rowCountLabel}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setShowCreateForm((current) => !current);
+              setFeedback(null);
+            }}
+            className="rounded-lg bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--primary-foreground))]"
+          >
+            {showCreateForm ? "Close" : "Add Employ"}
+          </button>
+        </div>
+      </div>
+
+      {showCreateForm ? (
+        <div className="mb-4 rounded-2xl border p-4">
+          <p className="mb-3 text-sm font-semibold text-[hsl(var(--card-foreground))]">Add New Employee</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <input
+              value={createForm.employee_id}
+              onChange={(event) => setCreateForm((current) => ({ ...current, employee_id: event.target.value }))}
+              placeholder="Employee ID"
+              className="rounded-lg border bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none ring-[hsl(var(--ring)/0.35)] transition focus:ring-4"
+            />
+            <input
+              value={createForm.full_name}
+              onChange={(event) => setCreateForm((current) => ({ ...current, full_name: event.target.value }))}
+              placeholder="Full name"
+              className="rounded-lg border bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none ring-[hsl(var(--ring)/0.35)] transition focus:ring-4"
+            />
+            <input
+              value={createForm.email}
+              onChange={(event) => setCreateForm((current) => ({ ...current, email: event.target.value }))}
+              placeholder="Email"
+              className="rounded-lg border bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none ring-[hsl(var(--ring)/0.35)] transition focus:ring-4"
+            />
+            <input
+              value={createForm.department}
+              onChange={(event) => setCreateForm((current) => ({ ...current, department: event.target.value }))}
+              placeholder="Department"
+              className="rounded-lg border bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none ring-[hsl(var(--ring)/0.35)] transition focus:ring-4"
+            />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void createEmployee()}
+              disabled={isCreating}
+              className="rounded-lg bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--primary-foreground))] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCreating ? "Adding..." : "Create"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateForm(false);
+                setCreateForm(emptyEmployeeForm);
+                setFeedback(null);
+              }}
+              disabled={isCreating}
+              className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mb-4">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search by ID, name, email, department..."
+          className="w-full rounded-lg border bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none ring-[hsl(var(--ring)/0.35)] transition focus:ring-4 md:max-w-md"
+        />
       </div>
 
       {feedback ? (
@@ -162,14 +316,14 @@ export function AllEmployTable({ employees }: AllEmployTableProps) {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-[hsl(var(--muted-foreground))]">
                     No employees found.
                   </td>
                 </tr>
               ) : (
-                rows.map((employee) => {
+                filteredRows.map((employee) => {
                   const isEditing = editingId === employee.id;
                   const isSaving = savingId === employee.id;
                   const isDeleting = deletingId === employee.id;

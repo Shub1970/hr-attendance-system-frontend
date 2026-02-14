@@ -2,8 +2,8 @@ import { shortDateLabel } from "@/lib/hr-utils";
 
 type TrendPoint = {
   date: string;
-  active: number;
-  leave: number;
+  present: number;
+  absent: number;
   noInfo: number;
 };
 
@@ -14,7 +14,7 @@ type StatusLineChartProps = {
 export function StatusLineChart({ points }: StatusLineChartProps) {
   const width = 620;
   const height = 220;
-  const maxValue = Math.max(1, ...points.flatMap((point) => [point.active, point.leave, point.noInfo]));
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.present, point.absent, point.noInfo]));
   const groupWidth = width / Math.max(points.length, 1);
   const groupInnerWidth = groupWidth * 0.7;
   const barWidth = groupInnerWidth / 3;
@@ -22,7 +22,7 @@ export function StatusLineChart({ points }: StatusLineChartProps) {
   return (
     <section className="rounded-3xl border bg-[hsl(var(--card))] p-4 shadow-sm md:p-6">
       <h2 className="text-xl font-bold text-[hsl(var(--card-foreground))]">Attendance Overview</h2>
-      <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Active, leave, and no-info counts over recent dates.</p>
+      <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Present, absent, and no-info counts over recent dates.</p>
 
       <div className="mt-5 overflow-x-auto">
         <svg viewBox={`0 0 ${width} ${height + 30}`} className="min-w-[620px]" role="img" aria-label="Attendance trend bar chart">
@@ -33,25 +33,25 @@ export function StatusLineChart({ points }: StatusLineChartProps) {
 
           {points.map((point, index) => {
             const groupStart = index * groupWidth + (groupWidth - groupInnerWidth) / 2;
-            const activeHeight = (point.active / maxValue) * height;
-            const leaveHeight = (point.leave / maxValue) * height;
+            const presentHeight = (point.present / maxValue) * height;
+            const absentHeight = (point.absent / maxValue) * height;
             const noInfoHeight = (point.noInfo / maxValue) * height;
 
             return (
               <g key={point.date}>
                 <rect
                   x={groupStart}
-                  y={height - activeHeight}
+                  y={height - presentHeight}
                   width={barWidth - 1}
-                  height={activeHeight}
+                  height={presentHeight}
                   rx="3"
                   fill="hsl(var(--chart-1))"
                 />
                 <rect
                   x={groupStart + barWidth}
-                  y={height - leaveHeight}
+                  y={height - absentHeight}
                   width={barWidth - 1}
-                  height={leaveHeight}
+                  height={absentHeight}
                   rx="3"
                   fill="hsl(var(--chart-2))"
                 />
@@ -79,8 +79,8 @@ export function StatusLineChart({ points }: StatusLineChartProps) {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3 text-xs font-semibold">
-        <span className="rounded-full bg-[hsl(var(--chart-1)/0.2)] px-3 py-1 text-[hsl(var(--foreground))]">Active</span>
-        <span className="rounded-full bg-[hsl(var(--chart-2)/0.2)] px-3 py-1 text-[hsl(var(--foreground))]">Leave</span>
+        <span className="rounded-full bg-[hsl(var(--chart-1)/0.2)] px-3 py-1 text-[hsl(var(--foreground))]">Present</span>
+        <span className="rounded-full bg-[hsl(var(--chart-2)/0.2)] px-3 py-1 text-[hsl(var(--foreground))]">Absent</span>
         <span className="rounded-full bg-[hsl(var(--muted))] px-3 py-1 text-[hsl(var(--muted-foreground))]">No info</span>
       </div>
     </section>
