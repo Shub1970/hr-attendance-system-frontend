@@ -5,6 +5,10 @@ export type Employee = {
   email: string;
   department: string;
   created_at: string;
+  employment_type?: string;
+  employ_type?: string;
+  role?: string;
+  phone?: string;
 };
 
 export type Attendance = {
